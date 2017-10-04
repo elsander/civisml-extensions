@@ -156,6 +156,8 @@ class DataFrameETL(BaseEstimator, TransformerMixin):
 
     def _expand_col(self, X, col):
         """Perform categorical expansion on a single column."""
+        import pdb
+        pdb.set_trace()
         # find any values in the data that match the sentinel
         if self._is_numeric[col]:
             sentinel_entries = np.where(np.equal(X[col].values,
@@ -277,6 +279,8 @@ class DataFrameETL(BaseEstimator, TransformerMixin):
             raise NotFittedError('This DataFrameETL instance is '
                                  'not fitted yet',)
 
+        import pdb
+        pdb.set_trace()
         if self.dataframe_output:
             # preallocate a dataframe
             X_new = pd.DataFrame(index=np.arange(X.shape[0]),
