@@ -53,10 +53,13 @@ def _classifier_predict(est, X):
     return _reshape_2d_long(ypred)
 
 
+import logging
+log = logging.getLogger(__name__)
+
 def _classifier_fit_predict(est, Xtrn, ytrn, Xtst, **fit_params):
     """function for doing fit and predict for classifiers"""
-    import pdb
-    pdb.set_trace()
+    log.debug(f'X train shape is {Xtrn.shape}, y train shape is {ytrn.shape}, X test shape is {Xtst.shape}')
+    log.debug(f'')
     est.fit(Xtrn, ytrn, **fit_params)
     return _classifier_predict(est, Xtst)
 
