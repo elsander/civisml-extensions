@@ -5,7 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
-
+### Added
+- Added multioutput Calibration CV class for (independent) calibration
+of multioutput models.
 
 ## [0.1.9] - 2018-05-17
 ### Fixed
