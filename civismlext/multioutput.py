@@ -100,7 +100,7 @@ class MultiOutputCalibratedClassifierCV(BaseEstimator, ClassifierMixin):
         X : array-like, shape (n_samples, n_features)
             Training data.
 
-        y : array-like, shape (n_samples,)
+        y : array-like, shape (n_samples, n_dvs)
             Target values.
 
         sample_weight : array-like, shape = [n_samples] or None
@@ -245,7 +245,7 @@ class _MultiOutputCalibratedClassifier(object):
 
     It assumes that base_estimator has already been fit, and trains the
     calibration on the input set of the fit function. Note that this class
-    should not be used as an estimator directly. Use 
+    should not be used as an estimator directly. Use
     MultiOutputCalibratedClassifierCV instead.
 
     Parameters
@@ -318,7 +318,7 @@ class _MultiOutputCalibratedClassifier(object):
         X : array-like, shape (n_samples, n_features)
             Training data.
 
-        y : array-like, shape (n_samples,)
+        y : array-like, shape (n_samples, n_dvs)
             Target values.
 
         i : integer
@@ -337,6 +337,7 @@ class _MultiOutputCalibratedClassifier(object):
 
         df, idx_pos_class = self._preproc(X, i)
 
+        calibrators = []
         for k, this_df in zip(idx_pos_class, df.T):
             if self.method == 'isotonic':
                 calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -346,9 +347,8 @@ class _MultiOutputCalibratedClassifier(object):
                 raise ValueError('method should be "sigmoid" or '
                                  '"isotonic". Got %s.' % self.method)
             calibrator.fit(this_df, Y[:, k], sample_weight)
-        return calibrator
-
-        return self
+            calibrators.append(calibrator)
+        return calibrators
 
     def fit(self, X, y, sample_weight=None):
         n_dvs = y.shape[1]
@@ -360,36 +360,22 @@ class _MultiOutputCalibratedClassifier(object):
         self.classes_ = [self.label_encoder_[i].classes_ for i in range(n_dvs)]
         self.calibrators_ = []
         for i in range(n_dvs):
-            calibrator = self._fit_one(X, y, i,
-                                       sample_weight=sample_weight)
-            self.calibrators_.append(calibrator)
+            calibrators = self._fit_one(X, y, i,
+                                        sample_weight=sample_weight)
+            self.calibrators_.append(calibrators)
         return self
 
     def predict_proba_one(self, X, i):
-        """Posterior probabilities of classification
-
-        This function returns posterior probabilities of classification
-        according to each class on an array of test vectors X.
-
-        Parameters
-        ----------
-        X : array-like, shape (n_samples, n_features)
-            The samples.
-        i : integer
-            Dependent variable index.
-
-        Returns
-        -------
-        C : array, shape (n_samples, n_classes)
-            The predicted probas. Can be exact zeros.
-        """
         n_classes = len(self.classes_[i])
         proba = np.zeros((X.shape[0], n_classes))
 
         df, idx_pos_class = self._preproc(X, i)
 
+        # only get calibrators for this DV
+        calibrator_list = self.calibrators_[i]
+
         for k, this_df, calibrator in \
-                zip(idx_pos_class, df.T, self.calibrators_):
+                zip(idx_pos_class, df.T, calibrator_list):
             if n_classes == 2:
                 k += 1
             proba[:, k] = calibrator.predict(this_df)
@@ -409,6 +395,21 @@ class _MultiOutputCalibratedClassifier(object):
         return proba
 
     def predict_proba(self, X):
+        """Posterior probabilities of classification
+
+        This function returns posterior probabilities of classification
+        according to each class on an array of test vectors X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The samples.
+
+        Returns
+        -------
+        C : array, shape (n_samples, n_classes)
+            The predicted probas. Can be exact zeros.
+        """
         probas = []
         for i in range(len(self.classes_)):
             probas.append(self.predict_proba_one(X, i))

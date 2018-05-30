@@ -4,23 +4,18 @@ from scipy import sparse
 from sklearn.model_selection import LeaveOneOut
 
 from sklearn.utils.testing import (assert_array_almost_equal, assert_equal,
-                                   assert_greater, assert_almost_equal,
-                                   assert_greater_equal,
+                                   assert_greater,
                                    assert_array_equal,
                                    assert_raises,
                                    ignore_warnings)
-from sklearn.datasets import make_classification, make_blobs
+from sklearn.datasets import make_classification
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import Imputer
-from sklearn.metrics import brier_score_loss, log_loss
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.calibration import _sigmoid_calibration, _SigmoidCalibration
-from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
 from sklearn.utils import shuffle
-from sklearn.multioutput import MultiOutputClassifier, ClassifierChain
+from sklearn.multioutput import MultiOutputClassifier
 
 from civismlext.multioutput import MultiOutputCalibratedClassifierCV
 
@@ -211,45 +206,48 @@ def test_sample_weight():
 #         assert_greater(loss, cal_loss)
 
 
-# TODO: update test for robust prefit classifier support
-# def test_calibration_prefit():
-#     """Test calibration for prefitted classifiers"""
-#     n_samples = 50
-#     X, y = make_classification(n_samples=3 * n_samples, n_features=6,
-#                                random_state=42)
-#     sample_weight = np.random.RandomState(seed=42).uniform(size=y.size)
+def test_calibration_prefit():
+    """Test calibration for prefitted classifiers"""
+    n_samples = 50
+    n_dvs = 3
+    X, Y = make_multioutput_classification(n_dvs,
+                                           n_samples=3 * n_samples,
+                                           n_features=6,
+                                           random_state=42)
+    sample_weight = np.random.RandomState(seed=42).uniform(size=Y.shape[0])
 
-#     X -= X.min()  # MultinomialNB only allows positive X
+    X -= X.min()  # MultinomialNB only allows positive X
 
-#     # split train and test
-#     X_train, y_train, sw_train = \
-#         X[:n_samples], y[:n_samples], sample_weight[:n_samples]
-#     X_calib, y_calib, sw_calib = \
-#         X[n_samples:2 * n_samples], y[n_samples:2 * n_samples], \
-#         sample_weight[n_samples:2 * n_samples]
-#     X_test, y_test = X[2 * n_samples:], y[2 * n_samples:]
+    # split train and test
+    X_train, Y_train, sw_train = \
+        X[:n_samples], Y[:n_samples], sample_weight[:n_samples]
+    X_calib, Y_calib, sw_calib = \
+        X[n_samples:2 * n_samples], Y[n_samples:2 * n_samples], \
+        sample_weight[n_samples:2 * n_samples]
+    X_test, Y_test = X[2 * n_samples:], Y[2 * n_samples:]
 
-#     clf = RandomForestClassifier()
-#     clf.fit(X_train, y_train, sw_train)
-#     prob_pos_clf = clf.predict_proba(X_test)[:, 1]
+    clf = MultiOutputClassifier(MultinomialNB())
+    clf.fit(X_train, Y_train, sw_train)
+    prob_pos_clf = clf.predict_proba(X_test)[0][:, 1]
 
-#     # Naive Bayes with calibration
-#     for this_X_calib, this_X_test in [(X_calib, X_test),
-#                                       (sparse.csr_matrix(X_calib),
-#                                        sparse.csr_matrix(X_test))]:
-#         for method in ['isotonic', 'sigmoid']:
-#             pc_clf = CalibratedClassifierCV(clf, method=method, cv="prefit")
+    # Naive Bayes with calibration
+    for this_X_calib, this_X_test in [(X_calib, X_test),
+                                      (sparse.csr_matrix(X_calib),
+                                       sparse.csr_matrix(X_test))]:
+        for method in ['isotonic', 'sigmoid']:
+            pc_clf = MultiOutputCalibratedClassifierCV(
+                clf, method=method, cv="prefit")
 
-#             for sw in [sw_calib, None]:
-#                 pc_clf.fit(this_X_calib, y_calib, sample_weight=sw)
-#                 y_prob = pc_clf.predict_proba(this_X_test)
-#                 y_pred = pc_clf.predict(this_X_test)
-#                 prob_pos_pc_clf = y_prob[:, 1]
-#                 assert_array_equal(y_pred,
-#                                    np.array([0, 1])[np.argmax(y_prob, axis=1)])
+            for sw in [sw_calib, None]:
+                pc_clf.fit(this_X_calib, Y_calib, sample_weight=sw)
+                y_prob = pc_clf.predict_proba(this_X_test)[0]
+                y_pred = pc_clf.predict(this_X_test)[:, 0]
+                prob_pos_pc_clf = y_prob[:, 1]
+                assert_array_equal(y_pred,
+                                   np.array([0, 1])[np.argmax(y_prob, axis=1)])
 
-#                 assert_greater(brier_score_loss(y_test, prob_pos_clf),
-#                                brier_score_loss(y_test, prob_pos_pc_clf))
+                assert_greater(brier_score_loss(Y_test[:, 0], prob_pos_clf),
+                               brier_score_loss(Y_test[:, 0], prob_pos_pc_clf))
 
 
 def test_multioutput_calibration_nan_imputer():
@@ -286,8 +284,6 @@ def test_multioutput_calibration_prob_sum():
 
 
 def test_multioutput_calibration_less_classes():
-    # TODO: figure out why this is failing
-
     # Test to check calibration works fine when train set in a test-train
     # split does not contain all classes
     # Since this test uses LOO, at each iteration train set will not contain a
@@ -297,21 +293,13 @@ def test_multioutput_calibration_less_classes():
     y = np.arange(10)
     Y = np.vstack((y, shuffle(y, random_state=999))).T
 
-    # first check basic calibrator
-    cal_clf_old = CalibratedClassifierCV(MultinomialNB(), method="sigmoid",
-                                         cv=LeaveOneOut())
-    cal_clf_old.fit(X, y)
-
     clf = MultiOutputClassifier(MultinomialNB())
     cal_clf = MultiOutputCalibratedClassifierCV(clf, method="sigmoid",
                                                 cv=LeaveOneOut())
     cal_clf.fit(X, Y)
 
     for i, calibrated_classifier in enumerate(cal_clf.calibrated_classifiers_):
-        proba_old = cal_clf_old.predict_proba(X)
-        print(proba_old)
         proba = calibrated_classifier.predict_proba(X)[0]
-        print(proba)
         assert_array_equal(proba[:, i], np.zeros(len(y)))
         assert_equal(np.all(np.hstack([proba[:, :i],
                                        proba[:, i + 1:]])), True)
